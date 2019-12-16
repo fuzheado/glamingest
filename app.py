@@ -55,6 +55,7 @@ cw_df = pd.read_csv(met_objectname_sheet, header=0, usecols=["Object Name", "QID
 
 default_object_name = 'object'  # If the objectName cannot be found, default to this
 
+
 @app.route('/')
 def index():
     greeting = app.config['GREETING']
@@ -163,7 +164,6 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
     if 'title' in data:
         qs.append(crosswalk_table['wdLabel'].format(qs_subject, data['title']))
 
-
     if 'objectID' in data:
         qs.append(crosswalk_table['objectID'].format(qs_subject, data['objectID']))
     if 'accessionNumber' in data:
@@ -230,6 +230,13 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         if data['primaryImageSmall']:
             display_img = data['primaryImageSmall']
 
+    # Add collection Met, accession_number
+    accession_number = None
+    if 'accessionNumber' in data:
+        accession_number = data['accessionNumber']
+        qs.append(crosswalk_table['collection'].format(qs_subject, glamqid, accession_number))
+        qs.append(crosswalk_table['wdLocation'].format(qs_subject, glamqid))
+
     url2commons_command = None
     commons_search_command = None
     if 'isPublicDomain' in data:
@@ -242,21 +249,25 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             # Craft the url2commons command to upload
             url2commons_command = url2commons_url + '?urls=' + urllib.parse.quote_plus(primary_img) + '_' + \
                                   urllib.parse.quote_plus(data['title'] + ' MET ' + data['accessionNumber'] + '.jpg')
-            commons_search_command = commons_search_url.format(urllib.parse.quote_plus(data['title']))
+
         else:
             # TODO - Add a message to main interface to say it's not free
-            memo.append('Public domain: Skipped, no free version')
+            memo.append('Not public domain: Skip upload, no free version')
+
+    # Setup the Commons search option, regardless of the PD status in case it's already in Commons
+    # Set the basic search string for Commons
+    commons_search_string = 'MET ' + accession_number + ' '
+    if 'title' in data:
+        if data['title']:
+            commons_search_string += data['title']
+    commons_search_command = commons_search_url.format(urllib.parse.quote_plus(commons_search_string))
+
     if 'department' in data:
         if data['department'] in metdepartments:
             qs.append(crosswalk_table['collection'].format(qs_subject, metdepartments[data['department']],
                                                            data['accessionNumber']))
         else:
             memo.append('Department: Skipped, none specified from API matched our crosswalk database')
-
-    # Add collection Met
-    if 'accessionNumber' in data:
-        qs.append(crosswalk_table['collection'].format(qs_subject, glamqid, data['accessionNumber']))
-        qs.append(crosswalk_table['wdLocation'].format(qs_subject, glamqid))
 
     if 'artistDisplayName' in data:
         if data['artistDisplayName']:
@@ -291,7 +302,8 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             memo.append('Try adding object to crosswalk database: "{}"'.format('bitly link'))
         else:
             entity_q = entity_lookup[['QID']].iat[0, 0]
-            entity_extrastatement_q = cw_df[cw_df[entity_type].str.match('^' + entity + '$')][['extrastatement']].iat[0, 0]
+            entity_extrastatement_q = cw_df[cw_df[entity_type].str.match('^' + entity + '$')][['extrastatement']].iat[
+                0, 0]
 
         if isinstance(entity_q, str):
             # Generate Quickstatement via the string formatting pattern in the dict,
