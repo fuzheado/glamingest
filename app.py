@@ -255,7 +255,7 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             memo.append('Not public domain: Skip upload, no free version')
 
     # Setup the Commons search option, regardless of the PD status in case it's already in Commons
-    # Set the basic search string for Commons
+    # Set the basic search string for Commons 
     commons_search_string = 'MET ' + accession_number + ' '
     if 'title' in data:
         if data['title']:
