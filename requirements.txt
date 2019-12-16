@@ -1,0 +1,8 @@
+requests
+flask
+pyyaml
+mwoauth
+regex
+pandas
+wikidataintegrator
+flask-bootstrap
