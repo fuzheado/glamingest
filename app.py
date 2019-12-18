@@ -200,7 +200,7 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
                         date_latest = latest_date_qualifier.format(chopped_date_prefix + matched.group(2))
                     # Make the proper statement, with possibly two qualifiers
                     qs.append(
-                        crosswalk_table['objectDate'].format(qs_subject, date) + circa_date_qualifier + date_latest)
+                        crosswalk_table['objectDate'].format(qs_subject, date) + circa_date_qualifier + str(date_latest))
                     memo.append('Date: Found double circa date: ' + incomingdate)
                 else:
                     memo.append('Date: Skipping since it is complex: ' + incomingdate)
@@ -256,7 +256,7 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
 
     # Setup the Commons search option, regardless of the PD status in case it's already in Commons
     # Set the basic search string for Commons
-    commons_search_string = 'MET ' + str(accession_number) + ' '
+    commons_search_string = str(accession_number) + ' '
     if 'title' in data:
         if data['title']:
             commons_search_string += data['title']
@@ -277,7 +277,9 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             memo.append('Creator: not specified from API, using generic Met Museum for description')
 
     # Perform sophisticated Object Name mappings
-
+    # TODO - take a look at classifcation as that is sometimes a better match
+    #   id 33 - objectName = bust; classification = glass
+    #   id 310175 - objectName = figure; classification = Stone-Sculpture
     # Lookup instance info in crosswalk
     entity_type = 'Object Name'
     entity_api_type = 'objectName'
@@ -292,17 +294,17 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
                                                           data['accessionNumber']
                                                           ))
         entity = data[entity_api_type]
-
         entity_lookup = cw_df[cw_df[entity_type].str.match(u'^' + re.escape(entity) + '$')]
 
+        entity_q = None
+        entity_extrastatement_q = None
+
         if entity_lookup.empty:
-            entity_q = None
-            entity_extrastatement_q = None
             memo.append('Failed: object name lookup for "{}"'.format(entity))
             memo.append('Try adding object to crosswalk database: "{}"'.format('bitly link'))
         else:
             entity_q = entity_lookup[['QID']].iat[0, 0]
-            entity_extrastatement_q = cw_df[cw_df[entity_type].str.match('^' + entity + '$')][['extrastatement']].iat[
+            entity_extrastatement_q = cw_df[cw_df[entity_type].str.match('^' + re.escape(entity) + '$')][['extrastatement']].iat[
                 0, 0]
 
         if isinstance(entity_q, str):
