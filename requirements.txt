@@ -4,5 +4,8 @@ pyyaml
 mwoauth
 regex
 pandas
+numpy
 wikidataintegrator
 flask-bootstrap
+wikitables
+mwparserfromhell

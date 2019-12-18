@@ -5,10 +5,15 @@ import os
 import yaml
 import re
 import pandas as pd
+import numpy as np
 import requests
 from flask_bootstrap import Bootstrap
 import json
 import urllib.parse
+
+import mwparserfromhell as mwp
+from wikitables import import_tables, WikiTable
+from wikitables.util import ftag
 
 # from flask import request, jsonify
 
@@ -47,13 +52,51 @@ metdepartments = {
 # Need OAuth to use this
 #   Options: urls and desc
 url2commons_url = 'https://tools.wmflabs.org/url2commons/index.html'
-wikidata_api_url = 'https://query.wikidata.org/bigdata/namespace/wdq/sparql'
+sparql_api_url = 'https://query.wikidata.org/bigdata/namespace/wdq/sparql'
 commons_search_url = 'https://commons.wikimedia.org/w/index.php?sort=relevance&search={}&title=Special%3ASearch&profile=advanced&fulltext=1&advancedSearch-current=%7B%7D&ns0=1&ns6=1&ns14=1'
 
-met_objectname_sheet = 'https://docs.google.com/spreadsheets/d/1WmXW2CjlLidcUXzahQsB3HjUVvECns4xDyIt-Hw-jW8/export?format=csv&id=1WmXW2CjlLidcUXzahQsB3HjUVvECns4xDyIt-Hw-jW8&gid=0'
-cw_df = pd.read_csv(met_objectname_sheet, header=0, usecols=["Object Name", "QID", "extrastatement", "extraqualifier"])
+# Crosswalk database in Google Sheets, which is now moved to on-wiki
+# met_objectname_sheet = 'https://docs.google.com/spreadsheets/d/1WmXW2CjlLidcUXzahQsB3HjUVvECns4xDyIt-Hw-jW8/export?format=csv&id=1WmXW2CjlLidcUXzahQsB3HjUVvECns4xDyIt-Hw-jW8&gid=0'
+
+# Changed the method of ingesting the crosswalk to using a wiki page instead
+# cw_df = pd.read_csv(met_objectname_sheet, header=0, usecols=["Object Name", "QID", "extrastatement", "extraqualifier"])
 
 default_object_name = 'object'  # If the objectName cannot be found, default to this
+
+objectname_crosswalk_page = 'User:Fuzheado/Met/glamingest/objectName'
+objectname_crosswalk_url = 'https://www.wikidata.org/wiki/' + objectname_crosswalk_page
+wikidata_api_url = 'https://www.wikidata.org/w/api.php'
+
+
+def import_tables_from_url(api_url, title):
+    params = {'prop': 'revisions',
+              'format': 'json',
+              'action': 'query',
+              'explaintext': '',
+              'titles': title,
+              'rvprop': 'content'}
+
+    r = requests.get(api_url, params)
+    r.raise_for_status()
+    pages = r.json()["query"]["pages"]
+
+    # use key from first result in 'pages' array
+    pageid = list(pages.keys())[0]
+    if pageid == '-1':
+        raise ArticleNotFound('no matching articles returned')
+
+    page = pages[pageid]
+    body = page['revisions'][0]['*']
+
+    ## parse for tables
+    raw_tables = mwp.parse(body).filter_tags(matches=ftag('table'))
+
+    def _table_gen():
+        for idx, table in enumerate(raw_tables):
+            name = '%s[%s]' % (page['title'], idx)
+            yield WikiTable(name, table)
+
+    return list(_table_gen())
 
 
 @app.route('/')
@@ -99,8 +142,9 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         "forward_id": str(forward_id),
         "backward_id": str(backward_id)
     }
+
     # Perform SPARQL query
-    data = requests.post(wikidata_api_url, data={'query': query, 'format': 'json'}).json()
+    data = requests.post(sparql_api_url, data={'query': query, 'format': 'json'}).json()
     memo.append(json.dumps(data))
 
     qid = ''  # For storing existing qids
@@ -200,7 +244,8 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
                         date_latest = latest_date_qualifier.format(chopped_date_prefix + matched.group(2))
                     # Make the proper statement, with possibly two qualifiers
                     qs.append(
-                        crosswalk_table['objectDate'].format(qs_subject, date) + circa_date_qualifier + str(date_latest))
+                        crosswalk_table['objectDate'].format(qs_subject, date) + circa_date_qualifier + str(
+                            date_latest))
                     memo.append('Date: Found double circa date: ' + incomingdate)
                 else:
                     memo.append('Date: Skipping since it is complex: ' + incomingdate)
@@ -284,6 +329,12 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
     entity_type = 'Object Name'
     entity_api_type = 'objectName'
 
+    # Load crosswalk from wiki page, using wikitables to read it in
+    tables = import_tables_from_url(wikidata_api_url, objectname_crosswalk_page)
+
+    # Turn the wiki table into dataframe via JSON, while replacing blank cells with NaN
+    cw_df = pd.read_json(tables[0].json()).replace(r'^\s*$', np.nan, regex=True)
+
     # Craft the Check for objectName
     if entity_api_type in data:
 
@@ -304,8 +355,8 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             memo.append('Try adding object to crosswalk database: "{}"'.format('bitly link'))
         else:
             entity_q = entity_lookup[['QID']].iat[0, 0]
-            entity_extrastatement_q = cw_df[cw_df[entity_type].str.match('^' + re.escape(entity) + '$')][['extrastatement']].iat[
-                0, 0]
+            entity_extrastatement_q = \
+                cw_df[cw_df[entity_type].str.match('^' + re.escape(entity) + '$')][['extrastatement']].iat[0, 0]
 
         if isinstance(entity_q, str):
             # Generate Quickstatement via the string formatting pattern in the dict,
@@ -328,6 +379,7 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
                                  memoList=memo,
                                  url2commons_command=url2commons_command,
                                  commons_search_command=commons_search_command,
+                                 objectname_crosswalk=objectname_crosswalk_url,
                                  metapicall=metapicall,
                                  metobjcall=metobjcall,
                                  **navlinks)
