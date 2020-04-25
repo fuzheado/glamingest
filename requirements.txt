@@ -9,3 +9,5 @@ wikidataintegrator
 flask-bootstrap
 wikitables
 mwparserfromhell
+pywikibot
+tabulate

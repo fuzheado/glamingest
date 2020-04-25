@@ -63,7 +63,9 @@ commons_search_url = 'https://commons.wikimedia.org/w/index.php?sort=relevance&s
 
 default_object_name = 'object'  # If the objectName cannot be found, default to this
 
-objectname_crosswalk_page = 'User:Fuzheado/Met/glamingest/objectName'
+# OLD page for dashboard/crosswalk
+# objectname_crosswalk_page = 'User:Fuzheado/Met/glamingest/objectName'
+objectname_crosswalk_page = 'Wikidata:GLAM/Metropolitan_Museum_of_Art/glamingest/objectName'
 objectname_crosswalk_url = 'https://www.wikidata.org/wiki/' + objectname_crosswalk_page
 wikidata_api_url = 'https://www.wikidata.org/w/api.php'
 
