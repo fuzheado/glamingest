@@ -49,6 +49,31 @@ metdepartments = {
     'The Libraries': 'Q67429148'
 }
 
+# Commons categories for each department
+# From: https://commons.wikimedia.org/wiki/Category:Metropolitan_Museum_of_Art_by_department
+metdepartments_commons_category = {
+    'American Decorative Arts': 'Department of American Decorative Arts, Metropolitan Museum of Art',
+    'The American Wing': 'The American Wing Collection, Metropolitan Museum of Art‎',
+    'Ancient Near Eastern Art': 'Department of Ancient Near Eastern Art, Metropolitan Museum of Art‎ ',
+    'Arms and Armor': 'Department of Arms and Armor, Metropolitan Museum of Art‎',
+    'Arts of Africa, Oceania, and the Americas': 'Department of Arts of Africa, Oceania, and the Americas, Metropolitan Museum of Art‎',
+    'Asian Art': 'Department of Asian Art, Metropolitan Museum of Art‎',
+    'Costume Institute': 'Costume Institute, Metropolitan Museum of Art‎',
+    'Drawings and Prints': 'Department of Drawings and Prints, Metropolitan Museum of Art',
+    'Egyptian Art': 'Department of Egyptian Art, Metropolitan Museum of Art‎',
+    'European Paintings': 'Department of European Paintings, Metropolitan Museum of Art‎',
+    'European Sculpture and Decorative Arts': 'Department of European Sculpture and Decorative Arts, Metropolitan Museum of Art‎',
+    'Greek and Roman Art': 'Department of Greek and Roman Art, Metropolitan Museum of Art‎ ',
+    'Islamic Art': 'Department of Islamic Art, Metropolitan Museum of Art‎',
+    'Medieval Art': 'Department of Medieval Art, Metropolitan Museum of Art‎',
+    'Modern and Contemporary Art': 'Department of Modern and Contemporary Art, Metropolitan Museum ',
+    'Musical Instruments': 'Department of Musical Instruments, Metropolitan Museum of Art‎',
+    'Photographs': 'Department of Photographs, Metropolitan Museum of Art‎',
+    'Robert Lehman Collection': 'Robert Lehman Collection (Metropolitan Museum of Art)',
+    'The Cloisters': 'The Cloisters Collection, Metropolitan Museum of Art‎',
+    'The Libraries': 'Libraries Collection, Metropolitan Museum of Art‎'
+}
+
 # Need OAuth to use this
 #   Options: urls and desc
 url2commons_url = 'https://tools.wmflabs.org/url2commons/index.html'
@@ -68,6 +93,44 @@ default_object_name = 'object'  # If the objectName cannot be found, default to 
 objectname_crosswalk_page = 'Wikidata:GLAM/Metropolitan_Museum_of_Art/glamingest/objectName'
 objectname_crosswalk_url = 'https://www.wikidata.org/wiki/' + objectname_crosswalk_page
 wikidata_api_url = 'https://www.wikidata.org/w/api.php'
+
+metapibase = 'https://collectionapi.metmuseum.org/public/collection/v1/objects/'
+metobjbase = 'https://www.metmuseum.org/art/collection/search/'
+
+# Wikidata reconciliation API - mapping names to Q items
+# Example of escaped query - Pavel%20Petrovich%20Svinin
+wdreconapibase = 'https://tools.wmflabs.org/openrefine-wikidata/en/api?query='
+
+commons_template_met = '''\
+=={{int:filedesc}}==
+{{Artwork
+ |artist             = __artist__
+ |author             = 
+ |title              = __title__
+ |description        = __description__
+ |object type        = __objectName__
+ |date               = __objectDate__
+ |medium             = __medium__
+ |dimensions         = __dimensions__
+ |institution        = {{Institution:Metropolitan Museum of Art}}
+ |department         = __department__
+ |accession number   = __accessionNumber__
+ |place of creation  = 
+ |place of discovery = 
+ |object history     = 
+ |exhibition history = 
+ |credit line        = __creditLine__
+ |inscriptions       = 
+ |notes              = 
+ |references         = 
+ |source             = __objectURL__{{Template:TheMet}}
+ |permission         = {{Cc-zero}}
+ |other_versions     = 
+ |wikidata           = __objectWikidata_URL__
+ |other_fields       = 
+}}
+[[Category:__department_commons_category__]]
+'''
 
 
 def import_tables_from_url(api_url, title):
@@ -145,11 +208,31 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         "backward_id": str(backward_id)
     }
 
-    # Perform SPARQL query
-    data = requests.post(sparql_api_url, data={'query': query, 'format': 'json'}).json()
-    memo.append(json.dumps(data))
-
     qid = ''  # For storing existing qids
+    display_img = None
+
+    # Set up Met API and Object URLs
+    metapicall = metapibase + str(id)
+    metobjcall = metobjbase + str(id)
+
+    # Perform SPARQL query
+    try:
+        data = requests.post(sparql_api_url, data={'query': query, 'format': 'json'}).json()
+        memo.append(json.dumps(data))
+    except ValueError:
+        flask.render_template('metid.html',
+                                  img=display_img,
+                                  id=id,
+                                  qid=qid,
+                                  qs='',
+                                  memo='No API content returned',
+                                  memoList=memo,
+                                  url2commons_command='',
+                                  commons_search_command='',
+                                  objectname_crosswalk='',
+                                  metapicall=metapicall,
+                                  metobjcall=metobjcall,
+                                  **navlinks)
 
     for item in data['results']['bindings']:
         qid = item['item']['value'].replace('http://www.wikidata.org/entity/', '')
@@ -172,16 +255,6 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         qs_subject = 'LAST'
         memo.append('Cleared for item creation: no Wikidata results returned for this object ID')
 
-    metapibase = 'https://collectionapi.metmuseum.org/public/collection/v1/objects/'
-    metapicall = metapibase + str(id)
-
-    metobjbase = 'https://www.metmuseum.org/art/collection/search/'
-    metobjcall = metobjbase + str(id)
-
-    # Wikidata reconciliation API - mapping names to Q items
-    # Example of escaped query - Pavel%20Petrovich%20Svinin
-    wdreconapibase = 'https://tools.wmflabs.org/openrefine-wikidata/en/api?query='
-
     glamqid = 'Q160236'
     wikidata_pd = 'Q19652'
     simpledate_template = '+{}-00-00T00:00:00Z/9'
@@ -193,7 +266,7 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         'wdDescription': '{}|Den|"{} (MET, {})"',
         'wdLocation': '{}|P276|{}',
         'wdCommonsCompatible': '{}|P4765|"{}"',
-        'wdCopyrightStatus': '{}|P6216|{}',
+        'wdCopyrightStatus': '{}|P6216|{}|P459|Q61848113',
         'objectID': '{}|P3634|"{}"',
         'accessionNumber': '{}|P217|"{}"|P195|{}',
         'collection': '{}|P195|{}|P217|"{}"',
@@ -254,11 +327,11 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
 
     # Lookup the artist name using Wikidata reconciliation API
     if 'artistDisplayName' in data:
-        reconquery = wdreconapibase + urllib.parse.quote_plus(data['artistDisplayName'])
-        print('reconquery: ' + reconquery)
-        recondata = requests.get(reconquery).json()
-        memo.append(json.dumps(recondata))
-
+        if data['artistDisplayName']:
+            reconquery = wdreconapibase + urllib.parse.quote_plus(data['artistDisplayName'])
+            # print('reconquery: ' + reconquery)
+            recondata = requests.get(reconquery).json()
+            memo.append(json.dumps(recondata))
         # if recondata['result']:
 
         # TODO more sophisticated treatment of reconciliation, printing a link to help out
@@ -266,6 +339,9 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         #     qid = item['item']['value'].replace('http://www.wikidata.org/entity/', '')
         #     resultlist.append(qid)
         #     memo.append('Found: {}'.format(qid))
+
+        # Empty artistDisplayName, so assume unknown
+        # else:
 
     # Grab images, first the large one for Commons, then a smaller display image
     primary_img = None
@@ -276,6 +352,14 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
     if 'primaryImageSmall' in data:
         if data['primaryImageSmall']:
             display_img = data['primaryImageSmall']
+
+    # Determine creator_string as real artist name, or generically "at the Met"
+    creator_string = " at the Metropolitan Museum of Art"
+    if 'artistDisplayName' in data:
+        if data['artistDisplayName']:
+            creator_string = " by {}".format(data['artistDisplayName'])
+        else:
+            memo.append('Creator: not specified from API, using generic Met Museum for description')
 
     # Add collection Met, accession_number
     accession_number = None
@@ -293,17 +377,57 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
             # TODO add more metadata about CC0, use Maarten's guidelines
             # https://www.wikidata.org/wiki/Q78609653
             # file format, url, title, author name string, license, operator
+
+            # Fill in Artwork template for uploading to Commons, to be passed to url2commons
+            # Start with the bare commons_template_met
+            commons_template = commons_template_met
+            creator_template = '{{{{Creator:{}}}}}'
+            artist = ''
+            if 'artistDisplayName' in data and data['artistDisplayName']:
+                artist = creator_template.format(data['artistDisplayName'])
+            # Craft the description in the
+            template_description = ''
+            if 'objectName' in data and data['objectName']:
+                template_description = downcasefunc(data['objectName'])
+                if 'culture' in data and data['culture']:
+                    template_description = template_description + '; ' + data['culture']
+
+            commons_template = re.sub('__artist__', artist, commons_template)
+            commons_template = re.sub('__title__', data['title'], commons_template)
+            commons_template = re.sub('__description__', template_description, commons_template)
+            commons_template = re.sub('__department__', data['department'], commons_template)
+            commons_template = re.sub('__objectName__', data['objectName'], commons_template)
+            commons_template = re.sub('__objectDate__', data['objectDate'], commons_template)
+            commons_template = re.sub('__medium__', data['medium'], commons_template)
+            commons_template = re.sub('__dimensions__', data['dimensions'], commons_template)
+            commons_template = re.sub('__accessionNumber__', data['accessionNumber'], commons_template)
+            commons_template = re.sub('__creditLine__', data['creditLine'], commons_template)
+            commons_template = re.sub('__objectURL__', data['objectURL'], commons_template)
+
+            # See if there is Wikidata Q number from Met API
+            try:
+                found = re.search('.+(Q[0-9]+)$', data['objectWikidata_URL']).group(1)
+            except AttributeError:
+                found = ''  # No Wikidata, so leave blank
+            commons_template = re.sub('__objectWikidata_URL__', found, commons_template)
+
+            # Need to map department to Commons category
+            commons_category = metdepartments_commons_category[data['department']]
+            commons_template = re.sub('__department_commons_category__', commons_category, commons_template)
+
             # Craft the url2commons command to upload
-            url2commons_command = url2commons_url + '?urls=' + urllib.parse.quote_plus(primary_img) + '_' + \
-                                  urllib.parse.quote_plus(data['title'] + ' MET ' + data['accessionNumber'] + '.jpg')
+            quoted_url = urllib.parse.quote(str.replace(primary_img, '_', '%5F'))
+            url2commons_command = url2commons_url + '?urls=' + quoted_url + ' ' + \
+                                  urllib.parse.quote(data['title'] + ' - MET ' + data['accessionNumber'] + '.jpg') + \
+                                  '&desc=' + urllib.parse.quote(commons_template)
 
         else:
-            # TODO - Add a message to main interface to say it's not free
+            # TODO - Add a message to main interface to say media is not free
             memo.append('Not public domain: Skip upload, no free version')
 
     # Setup the Commons search option, regardless of the PD status in case it's already in Commons
     # Set the basic search string for Commons
-    commons_search_string = str(accession_number) + ' '
+    commons_search_string = str(accession_number) + ' MET '
     if 'title' in data:
         if data['title']:
             commons_search_string += data['title']
@@ -316,15 +440,8 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         else:
             memo.append('Department: Skipped, none specified from API matched our crosswalk database')
 
-    if 'artistDisplayName' in data:
-        if data['artistDisplayName']:
-            creator_string = " by {}".format(data['artistDisplayName'])
-        else:
-            creator_string = " at the Metropolitan Museum of Art"
-            memo.append('Creator: not specified from API, using generic Met Museum for description')
-
     # Perform sophisticated Object Name mappings
-    # TODO - take a look at classifcation as that is sometimes a better match
+    # TODO - take a look at classification as that is sometimes a better match
     #   id 33 - objectName = bust; classification = glass
     #   id 310175 - objectName = figure; classification = Stone-Sculpture
     # Lookup instance info in crosswalk
@@ -342,8 +459,15 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
 
         memo.append('Met object name: {}'.format(data['objectName']))
 
+        # Create description for Wikidata in the form of:
+        # "painting (French) by Claude Monet (MET, 12.34)"
+        if 'culture' in data and data['culture']:
+            culture_string = ' (' + data['culture'] + ')'
+        else:
+            culture_string = ''
+        wd_description = downcasefunc(data['objectName']) + culture_string + creator_string
         qs.append(crosswalk_table['wdDescription'].format(qs_subject,
-                                                          downcasefunc(data['objectName']) + creator_string,
+                                                          wd_description,
                                                           data['accessionNumber']
                                                           ))
         entity = data[entity_api_type]
