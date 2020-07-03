@@ -153,7 +153,7 @@ def import_tables_from_url(api_url, title):
     page = pages[pageid]
     body = page['revisions'][0]['*']
 
-    ## parse for tables
+    # parse for tables
     raw_tables = mwp.parse(body).filter_tags(matches=ftag('table'))
 
     def _table_gen():
@@ -221,18 +221,18 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         memo.append(json.dumps(data))
     except ValueError:
         flask.render_template('metid.html',
-                                  img=display_img,
-                                  id=id,
-                                  qid=qid,
-                                  qs='',
-                                  memo='No API content returned',
-                                  memoList=memo,
-                                  url2commons_command='',
-                                  commons_search_command='',
-                                  objectname_crosswalk='',
-                                  metapicall=metapicall,
-                                  metobjcall=metobjcall,
-                                  **navlinks)
+                              img=display_img,
+                              id=id,
+                              qid=qid,
+                              qs='',
+                              memo='No API content returned',
+                              memoList=memo,
+                              url2commons_command='',
+                              commons_search_command='',
+                              objectname_crosswalk='',
+                              metapicall=metapicall,
+                              metobjcall=metobjcall,
+                              **navlinks)
 
     for item in data['results']['bindings']:
         qid = item['item']['value'].replace('http://www.wikidata.org/entity/', '')
@@ -271,7 +271,8 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         'accessionNumber': '{}|P217|"{}"|P195|{}',
         'collection': '{}|P195|{}|P217|"{}"',
         'objectName': '{}|P31|{}',
-        'objectDate': '{}|P571|{}'
+        'objectDate': '{}|P571|{}',
+        'isTimelineWork': '{}|P1343|Q28837176'
     }
 
     # data = json.loads(rawdata, strict=False)
@@ -287,6 +288,15 @@ SELECT DISTINCT ?item ?instance ?collection ?inventory ?location ?copyright ?ccu
         qs.append(crosswalk_table['objectID'].format(qs_subject, data['objectID']))
     if 'accessionNumber' in data:
         qs.append(crosswalk_table['accessionNumber'].format(qs_subject, data['accessionNumber'], glamqid))
+
+    if 'isTimelineWork' in data:
+        if data['isTimelineWork']:
+            # TODO - Add statement about TOAH
+            # item|P1343|Q28837176
+            qs.append(crosswalk_table['isTimelineWork'].format(qs_subject))
+            memo.append('Timeline work: should add statements')
+        else:
+            memo.append('Not timeline work')
 
     if 'objectDate' in data:
         incomingdate = data['objectDate']
